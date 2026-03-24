@@ -24,13 +24,63 @@ pip install -r requirements.txt
 ```
 
 ## Configuration
-Copy `config.toml` (or `conf.toml`/`prod.toml`) and update:
+Copy `config.toml` and update:
 - `[main]`: `workdir` temporary directory and `max_workers` for the thread pool.
 - `[backup.sites]`: `excluded_sites` and default S3 bucket for full backups.
 - `[[backup.projects]]`: site-specific project filters with their own buckets.
 - `[vault]`: Vault url/role/paths if secrets should be resolved dynamically.
 
 At runtime you may override the config file (`-c custom.toml`) and specify `TS_SITE_NAME` to limit processing to a single site.
+
+### Example `config.toml`
+
+```toml
+[main]
+# Temporary directory for downloaded workbooks before upload
+workdir = "/tmp/tableau-backup"
+# Number of parallel download/upload workers
+max_workers = 6
+
+# Full backup of all sites into one bucket.
+# Use this OR [[backup.projects]], or both.
+[backup.sites]
+s3_bucket_name = "my-tableau-backup"
+# Sites to skip (optional)
+excluded_sites = ["Personal", "Sandbox"]
+
+# Per-site project-scoped backups into separate buckets.
+# Repeat this block for each site that needs project filtering.
+[[backup.projects]]
+site = "Sales"
+projects = ["Finance/Revenue", "Marketing"]
+bucket = "my-tableau-sales-backup"
+
+[[backup.projects]]
+site = "Engineering"
+projects = ["Data Platform"]
+bucket = "my-tableau-eng-backup"
+
+# HashiCorp Vault – used to fetch Tableau credentials and script params.
+# Remove this section and set credentials directly in the environment
+# (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY, etc.) if Vault is not used.
+[vault]
+url = "https://vault.example.com"
+role_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+secret_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+[vault.paths]
+# Secret must contain: username, password, url
+ts_creds = "secret/tableau-server/prod"
+# Secret must contain: sentry_dsn
+params   = "secret/tableau-content-backup/params"
+```
+
+**Vault secrets format expected by the script:**
+
+| Path key   | Required fields                    |
+|------------|------------------------------------|
+| `ts_creds` | `username`, `password`, `url`      |
+| `params`   | `sentry_dsn`                       |
 
 ## Running a Backup
 
