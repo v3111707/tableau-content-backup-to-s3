@@ -3,4 +3,10 @@ name = "github-tableau-content-backup-to-s3"
 version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "tableauserverclient~=0.36",
+    "boto3~=1.36.2",
+    "sentry-sdk~=2.20.0",
+    "hvac~=2.3.0",
+    "zabbix-utils~=2.0.2",
+]

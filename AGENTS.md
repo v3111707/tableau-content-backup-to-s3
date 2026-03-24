@@ -1,12 +1,12 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-Top-level entry points (`vcli.py`) orchestrate backups by instantiating `wb_backup2s3.BackupWB2S3`. Core logic lives in `wb_backup2s3/core.py`, which handles Tableau API calls, retry logic, and S3 uploads. Configuration templates (`config.toml`) sit beside the CLI for quick swapping between environments; avoid editing them in place for secrets—copy to a local override. Logs (`wb-backup2s3.log*`) remain in the repo root during development but rotate in production. Keep any future tests under `tests/` to separate fixtures from executable code.
+Top-level entry points (`cli.py`) orchestrate backups by instantiating `wb_backup2s3.BackupWB2S3`. Core logic lives in `wb_backup2s3/core.py`, which handles Tableau API calls, retry logic, and S3 uploads. Configuration templates (`config.toml`) sit beside the CLI for quick swapping between environments; avoid editing them in place for secrets—copy to a local override. Logs (`wb-backup2s3.log*`) remain in the repo root during development but rotate in production. Keep any future tests under `tests/` to separate fixtures from executable code.
 
 ## Build, Test, and Development Commands
 - `python -m venv venv && source venv/bin/activate`: create and enter a dedicated virtualenv.
 - `pip install -r requirements.txt`: install Tableau Server Client, boto3, Sentry, Zabbix helpers, and Vault client pinned for compatibility.
-- `python vcli.py -c config.toml --debug --zs`: run a dry backup using the sample config, verbose logging, and stubbed Zabbix sender (`--zs`); remove `--debug` for production parity.
+- `python cli.py -c config.toml --debug --zs`: run a dry backup using the sample config, verbose logging, and stubbed Zabbix sender (`--zs`); remove `--debug` for production parity.
 - `PYTHONPATH=. python -m wb_backup2s3.core`: quick module-level experiments; prefer this mode for library-style scripts.
 
 ## Coding Style & Naming Conventions

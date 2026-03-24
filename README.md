@@ -35,7 +35,7 @@ At runtime you may override the config file (`-c custom.toml`) and specify `TS_S
 ## Running a Backup
 
 ```bash
-python test_cli.py -c config.toml --debug --zs
+python cli.py -c config.toml --debug --zs
 ```
 
 - `--debug` increases log verbosity and writes to `wb-backup2s3.log`.
@@ -44,6 +44,6 @@ python test_cli.py -c config.toml --debug --zs
 When the script finishes it reports successes/failures, updates Zabbix metrics, uploads new workbooks, and refreshes the S3 state file.
 
 ## Development & Testing
-- Add new modules under `wb_backup2s3/`; keep entry points (`vcli.py`) thin.
+- Add new modules under `wb_backup2s3/`; keep entry points (`cli.py`) thin.
 - Use `pytest -q` (tests live under `tests/`) with mocked Tableau/S3 clients to cover new flows.
 - Before opening a PR, run a dry job against a staging Tableau site with `--debug --zs` and attach the anonymized log snippet showing Zabbix/S3 updates.
