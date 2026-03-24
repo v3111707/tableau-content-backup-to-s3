@@ -1,0 +1,16 @@
+*.log*
+*.conf
+*.json
+*.yaml
+venv*/
+.tmp/
+.idea
+**/.DS_Store
+remove_group_all_users.log*
+sandbox*
+.env*
+*.toml
+!pyproject.toml
+__pycache__
+test_*
+
