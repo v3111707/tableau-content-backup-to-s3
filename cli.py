@@ -9,7 +9,7 @@ import hvac
 import re
 from zabbix_utils import Sender as ZabbixSender
 from queue import SimpleQueue
-from wb_backup2s3 import BackupWB2S3, SENTRY_DENYLIST
+from core import BackupWB2S3, SENTRY_DENYLIST
 from sentry_sdk.scrubber import EventScrubber
 from sentry_sdk.integrations.logging import LoggingIntegration
 from logging.handlers import RotatingFileHandler
