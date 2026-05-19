@@ -1,5 +1,5 @@
 [project]
-name = "github-tableau-content-backup-to-s3"
+name = "tableau-content-backup-to-s3"
 version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.14"

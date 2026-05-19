@@ -1,6 +1,6 @@
-## Tableau Workbook Backup to S3
+## Tableau Workbook and Datasource Backup to S3
 
-`tableau-wb-backup2s3` automates incremental backups of Tableau Server workbooks into versioned folders on S3. It signs in to Tableau, downloads workbooks (with extracts when possible), pushes them to AWS, and streams telemetry to Sentry and Zabbix so operations teams can monitor drift.
+`tableau-content-backup-to-s3` automates incremental backups of Tableau Server workbooks and datasources into versioned folders on S3. It signs in to Tableau, downloads content (with extracts when possible), pushes it to AWS, and streams telemetry to Sentry and Zabbix so operations teams can monitor drift.
 
 ### Features
 - **Incremental sync with state tracking:** `upload_state.json` is stored per site in S3, letting the script skip unchanged workbooks and detect removals without scanning every object's tags; reading a single JSON blob is cheaper than issuing `GetObjectTagging` across thousands of keys.
@@ -10,7 +10,7 @@
 - **Self-healing objects:** the `_s3_update_outdated_last_modified` task refreshes LastModified timestamps for stale objects so lifecycle policies keep working.
 
 ## Requirements
-- Python 3.10+
+- Python 3.14+ (as declared in `pyproject.toml`)
 - AWS IAM user/key with `s3:ListBucket`, `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`
 - Tableau Server account with download rights on desired sites/projects
 - Optional: Vault access for secrets (`hvac`), outbound network to Sentry/Zabbix
@@ -94,6 +94,7 @@ python cli.py -c config.toml --debug --zs
 When the script finishes it reports successes/failures, updates Zabbix metrics, uploads new workbooks, and refreshes the S3 state file.
 
 ## Development & Testing
-- Add new modules under `wb_backup2s3/`; keep entry points (`cli.py`) thin.
-- Use `pytest -q` (tests live under `tests/`) with mocked Tableau/S3 clients to cover new flows.
+- Core backup logic lives in `core/core.py`; keep entry point logic in `cli.py` thin.
+- Current test file in this repo is `test_cli.py`; for broader coverage, add new tests under `tests/`.
+- Use `pytest -q` with mocked Tableau/S3 clients to cover new flows.
 - Before opening a PR, run a dry job against a staging Tableau site with `--debug --zs` and attach the anonymized log snippet showing Zabbix/S3 updates.
