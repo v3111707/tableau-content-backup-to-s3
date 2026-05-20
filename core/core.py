@@ -6,14 +6,14 @@ import os
 import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from operator import itemgetter
 from queue import SimpleQueue
+from typing import Any, cast
 from urllib import parse
 
 import boto3
-import botocore
 import sentry_sdk
 import tableauserverclient as TSC
+from botocore.exceptions import ClientError
 from sentry_sdk import add_breadcrumb
 from sentry_sdk.scrubber import DEFAULT_DENYLIST
 from tableauserverclient.models.datasource_item import DatasourceItem
@@ -36,14 +36,14 @@ class BackupItem:
     id: str
     project: str
     size: int
-    site: str
+    site: str | None
 
 
 def retry(_func=None, *, times=6):
     def decorator_retry(func):
         @functools.wraps(func)
         def wrapper_retry(*args, **kwargs):
-            last_exception = None
+            last_exception: Exception | None = None
             for attempt in range(times):
                 try:
                     return func(*args, **kwargs)
@@ -51,6 +51,8 @@ def retry(_func=None, *, times=6):
                     last_exception = e
                     logger.debug(f"  Attempt {attempt + 1} failed: {e}. Retrying...")
             logger.debug("  Function failed after maximum retry attempts.")
+            if last_exception is None:
+                raise RuntimeError("retry failed without captured exception")
             raise last_exception
 
         return wrapper_retry
@@ -99,8 +101,8 @@ class BackupWB2S3:
         self,
         tableau_cred: tuple,
         work_dir: str,
-        failed_q: SimpleQueue = None,
-        successful_q: SimpleQueue = None,
+        failed_q: SimpleQueue | None = None,
+        successful_q: SimpleQueue | None = None,
         ts_http_timeout: int = 1200,
     ):
         self.logger = logging.getLogger(self.loger_name)
@@ -111,7 +113,7 @@ class BackupWB2S3:
         self.project_id_path: dict = {}
         self.projects_hierarchy: dict = {}
         self.user_id_username = None
-        self.bucket_name: dict = {}
+        self.bucket_name: str | None = None
         self.upload_state = {}
         self.wb_name_s3_object = {}
 
@@ -144,6 +146,12 @@ class BackupWB2S3:
         # self.logger.debug(f"{boto3.client("sts").get_caller_identity()=}")
 
     def _get_ts_item_path(self, ts_item):
+        if self.current_site_name is None:
+            raise RuntimeError("current_site_name is not set")
+        if ts_item.project_id is None:
+            raise ValueError("ts_item.project_id is None")
+        if ts_item.name is None:
+            raise ValueError("ts_item.name is None")
         return (
             self.current_site_name
             + "/"
@@ -177,13 +185,13 @@ class BackupWB2S3:
     def _get_sub_projects(self, project_id: str):
         resp = []
         if self.projects_hierarchy.get(project_id):
-            resp.extend(self.projects_hierarchy.get(project_id))
+            resp.extend(self.projects_hierarchy.get(project_id, []))
         for sub_project_id in self.projects_hierarchy.get(project_id, []):
             resp.extend(self._get_sub_projects(sub_project_id))
         return resp
 
     def _ts_get_all_sites(self):
-        return list(TSC.Pager(self.ts.sites.get))
+        return list(TSC.Pager(cast(Any, self.ts.sites.get)))
 
     def _ts_switch_site(self, site_name: str):
         site = [i for i in self._ts_get_all_sites() if i.name == site_name]
@@ -203,17 +211,18 @@ class BackupWB2S3:
     def _ts_download_item(self, item, include_extract: bool = True):
         file_path = os.path.join(self.work_dir, item.id)
         self.logger.info(f" download:{item.project_name} / {item.name} ({item.id})")
-
+        if item.id is None:
+            raise ValueError("Tableau item id is None")
         match item:
             case WorkbookItem():
                 return self.ts.workbooks.download(
-                    workbook_id=item.id,
+                    item.id,
                     include_extract=include_extract,
                     filepath=file_path,
                 )
             case DatasourceItem():
                 return self.ts.datasources.download(
-                    datasource_id=item.id,
+                    item.id,
                     include_extract=include_extract,
                     filepath=file_path,
                 )
@@ -237,6 +246,8 @@ class BackupWB2S3:
             )
 
         obj_key = item_path + "." + file_path[-7:].split(".")[1]
+        if self.user_id_username is None:
+            raise RuntimeError("user map is not initialized")
         tags = {
             "tab_owner": self.user_id_username.get(item.owner_id),
             "tab_id": item.id,
@@ -286,7 +297,7 @@ class BackupWB2S3:
     def full_backup(
         self,
         s3_bucket_name: str,
-        site_names: list = None,
+        site_names: list[str] | None = None,
         last_modified_update_interval: int = 60,
         max_workers: int = 10,
         excluded_sites: list = [],
@@ -365,6 +376,9 @@ class BackupWB2S3:
         for item in all_dss + all_wbs:
             item_path = self._get_ts_item_path(item)
 
+            if item.created_at is None or item.updated_at is None:
+                raise ValueError(f"{item.id}: created_at/updated_at is None")
+
             if self.upload_state.get(item_path) and all(
                 [
                     self.upload_state[item_path]["id"] == item.id,
@@ -414,7 +428,7 @@ class BackupWB2S3:
     def _s3_is_object_exists(self, object_key):
         try:
             self.s3_client.head_object(Bucket=self.bucket_name, Key=object_key)
-        except botocore.exceptions.ClientError as e:
+        except ClientError as e:
             if e.response["Error"]["Code"] == "404":
                 return False
             else:
@@ -422,7 +436,7 @@ class BackupWB2S3:
         return True
 
     @retry
-    def _s3_upload(self, file_path: str, object_key: str, tags: dict = None):
+    def _s3_upload(self, file_path: str, object_key: str, tags: dict | None = None):
         params = {
             "Filename": file_path,
             "Bucket": self.bucket_name,
@@ -434,6 +448,8 @@ class BackupWB2S3:
         self.s3_client.upload_file(**params)
 
     def _s3_list_all_objects_in_curr_ts_site(self):
+        if self.current_site_name is None:
+            raise RuntimeError("current_site_name is not set")
         paginator = self.s3_client.get_paginator("list_objects_v2")
         response_iterator = paginator.paginate(Bucket=self.bucket_name)
         all_objects = []
@@ -486,7 +502,7 @@ class BackupWB2S3:
     def _s3_update_last_modified(self, object_key: str):
         self.logger.debug(f"Update last_modified for {object_key}")
 
-        self.s3_resource.meta.client.copy(
+        self.s3_resource.meta.client.copy(  # pyright: ignore[reportOptionalMemberAccess]
             CopySource={"Bucket": self.bucket_name, "Key": object_key},
             Bucket=self.bucket_name,
             Key=object_key,
@@ -496,6 +512,8 @@ class BackupWB2S3:
 
     @retry(times=3)
     def _s3_upload_upload_state(self):
+        if self.current_site_name is None:
+            raise RuntimeError("current_site_name is not set")
         obj_key = self.current_site_name + "/" + self.s3_upload_state_file
         self.logger.info(f"Upload {obj_key} ")
         with sentry_sdk.new_scope() as scope:
@@ -516,6 +534,8 @@ class BackupWB2S3:
                 raise
 
     def _s3_download_upload_state(self):
+        if self.current_site_name is None:
+            raise RuntimeError("current_site_name is not set")
         obj_key = self.current_site_name + "/" + self.s3_upload_state_file
         self.logger.debug(f"Try to download {obj_key} ")
         with sentry_sdk.new_scope() as scope:
@@ -527,7 +547,7 @@ class BackupWB2S3:
             )
             try:
                 resp = self.s3_client.get_object(Bucket=self.bucket_name, Key=obj_key)
-            except botocore.exceptions.ClientError as e:
+            except ClientError as e:
                 if e.response.get("Error", {}).get("Code") == "NoSuchKey":
                     self.logger.warning(obj_key + " not found. Set upload_state = {}")
                     self.upload_state = {}

@@ -44,11 +44,20 @@ class ZabSender(object):
         if not self._stub:
             self.logger = logging.getLogger("main.Zabbix_sender")
             zabbix_config = open(config_file).read()
-            self._server = re.search(r"ServerActive=(.+)", zabbix_config).group(1)
+
+            server_match = re.search(r"ServerActive=(.+)", zabbix_config)
+            if server_match is None:
+                raise ValueError("ServerActive not found in zabbix config")
+            self._server = server_match.group(1).strip()
+
+            host_match = re.search(r"Hostname=(.+)", zabbix_config)
+            if host_match is None:
+                raise ValueError("Hostname not found in zabbix config")
+            self._hostname = host_match.group(1).strip()
+
             self.logger.debug(f"self.server: {self._server}")
-            self._hostname = re.search(r"Hostname=(.+)", zabbix_config).group(1)
-            self._sender = ZabbixSender(server=self._server)
             self.logger.debug(f"self.hostname: {self._hostname}")
+            self._sender = ZabbixSender(server=self._server)
 
     def send(self, key: str, value: str):
         if not self._stub:
@@ -64,7 +73,7 @@ class ZabSender(object):
 def init_logger(
     debug: bool = False,
     log_name: str = "main",
-    path: str = None,
+    path: str | None = None,
     max_bytes: int = 5242880,
     backup_count: int = 5,
 ):
